@@ -17,21 +17,47 @@
     <div class="row"><button id="btn_login">登录</button></div>
     <div id="msg" style="color:#f44336"></div>
   </div>
+  <!-- Toasts -->
+  <div class="toasts" id="toasts" style="position:fixed;top:12px;right:12px;z-index:9999"></div>
   <script>
     async function post(url, body){
       const r = await fetch(url,{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
       if(!r.ok){ throw new Error(await r.text()) }
       return r.json()
     }
-    document.getElementById('btn_login').addEventListener('click', async ()=>{
+    function toast(message, type='ok'){
+      const box = document.getElementById('toasts')
+      const el = document.createElement('div')
+      el.className = `toast ${type}`
+      el.textContent = message
+      el.style.background = type==='error' ? '#b91c1c' : (type==='warn' ? '#b45309' : '#065f46')
+      el.style.color = '#fff'
+      el.style.padding = '8px 12px'
+      el.style.marginTop = '8px'
+      el.style.borderRadius = '6px'
+      el.style.boxShadow = '0 4px 12px rgba(0,0,0,.3)'
+      box.appendChild(el)
+      setTimeout(()=> el.remove(), 2400)
+    }
+    async function doLogin(){
       const pwd = document.getElementById('password').value
       const msg = document.getElementById('msg')
       msg.textContent = ''
       try{
         await post('/api/login', {password: pwd})
+        toast('登录成功','ok')
         location.href = '/'
       }catch(e){
         msg.textContent = e.message || '登录失败'
+        toast('登录失败','error')
+      }
+    }
+    document.getElementById('btn_login').addEventListener('click', doLogin)
+    // Enter 提交
+    document.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter'){
+        e.preventDefault()
+        doLogin()
       }
     })
   </script>
