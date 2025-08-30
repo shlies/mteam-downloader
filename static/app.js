@@ -23,11 +23,12 @@ createApp({
       state: { running: false, last_poll_at: null, last_poll_message: '' },
       // saved searches
       saved: [],
-      // preview
-      new_keyword: '',
+  // preview
+  new_keyword: '',
+  new_task_name: '',
       preview_items: [],
-      // config
-      api_key: '', qb_url: '', qb_username: '', qb_password: '', poll_interval_sec: 300, enabled: true,
+  // config
+  api_key: '', qb_url: '', qb_username: '', qb_password: '', download_base: '', poll_interval_sec: 300, enabled: true,
       qb_check_result: '',
       // downloads
       tasks: [],
@@ -63,6 +64,7 @@ createApp({
         this.qb_url = c.qb_url || ''
         this.qb_username = c.qb_username || ''
         this.qb_password = ''
+  this.download_base = c.download_base || ''
         this.poll_interval_sec = c.poll_interval_sec || 300
         this.enabled = !!c.enabled
       }catch(e){ /* ignore */ }
@@ -73,6 +75,7 @@ createApp({
         qb_url: this.qb_url || undefined,
         qb_username: this.qb_username || undefined,
         qb_password: this.qb_password || '',
+        download_base: this.download_base || null,
         poll_interval_sec: this.poll_interval_sec || undefined,
         enabled: this.enabled,
       }
@@ -104,9 +107,9 @@ createApp({
     async createSaved(){
       if(!this.new_keyword){ this.toast('请输入关键词', 'warn'); return }
       try{
-        await fetchJSON('/api/saved_searches', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({keyword: this.new_keyword, enabled:true})})
+        await fetchJSON('/api/saved_searches', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({keyword: this.new_keyword, task_name: this.new_task_name || null, enabled:true})})
         this.toast('已创建', 'success')
-        this.new_keyword=''
+        this.new_keyword=''; this.new_task_name=''
         await this.loadSaved()
       }catch(e){ this.toast('创建失败：' + e.message, 'error') }
     },

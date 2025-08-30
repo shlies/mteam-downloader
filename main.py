@@ -33,6 +33,8 @@ class Config(SQLModel, table=True):
     qb_url: Optional[str] = None  # e.g. http://127.0.0.1:8080
     qb_username: Optional[str] = None
     qb_password: Optional[str] = None
+    # Base download location on qB host (absolute path on qB side)
+    download_base: Optional[str] = None
     # Web admin password (PBKDF2)
     admin_password_hash: Optional[str] = None
     admin_password_salt: Optional[str] = None
@@ -62,6 +64,8 @@ class SavedSearch(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     keyword: str
     enabled: bool = True
+    # Optional task name; used as subfolder name under download_base
+    task_name: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -97,6 +101,15 @@ def migrate_db():
                 conn.exec_driver_sql("ALTER TABLE config ADD COLUMN admin_password_hash VARCHAR")
             if "admin_password_salt" not in cols:
                 conn.exec_driver_sql("ALTER TABLE config ADD COLUMN admin_password_salt VARCHAR")
+            if "download_base" not in cols:
+                conn.exec_driver_sql("ALTER TABLE config ADD COLUMN download_base VARCHAR")
+
+            # Ensure task_name exists on savedsearch
+            s_cols = set()
+            for row in conn.exec_driver_sql("PRAGMA table_info('savedsearch')"):
+                s_cols.add(row[1])
+            if "task_name" not in s_cols:
+                conn.exec_driver_sql("ALTER TABLE savedsearch ADD COLUMN task_name VARCHAR")
     except Exception as e:
         logger.warning("数据库迁移检查失败: %s", e)
 
@@ -193,9 +206,13 @@ class QbClient:
             self._client.auth_log_in()
         return self._client
 
-    def add_url(self, url: str) -> bool:
+    def add_url(self, url: str, savepath: Optional[str] = None) -> bool:
         client = self._get_client()
-        res = client.torrents_add(urls=url)
+        kwargs = {"urls": url}
+        if savepath:
+            # Disable AutoTMM to honor custom save path
+            kwargs.update({"savepath": savepath, "autoTMM": False})
+        res = client.torrents_add(**kwargs)
         if res is None:
             return True
         if isinstance(res, str) and res.strip().lower().startswith("ok"):
@@ -292,14 +309,15 @@ class Poller:
             assert cfg is not None
             # Only use per-task keywords (no global keywords)
             active_tasks = session.exec(select(SavedSearch).where(SavedSearch.enabled == True)).all()  # noqa: E712
-            keywords = [t.keyword.strip() for t in active_tasks if t.keyword and t.keyword.strip()]
-            if not keywords:
+            tasks = [t for t in active_tasks if t.keyword and t.keyword.strip()]
+            if not tasks:
                 return 0
 
             mt = MTeamClient(api_key=cfg.api_key)
             qb = QbClient(cfg.qb_url, cfg.qb_username, cfg.qb_password)
 
-            for kw in keywords:
+            for task_row in tasks:
+                kw = task_row.keyword.strip()
                 try:
                     results = mt.search(kw)
                 except Exception as e:
@@ -324,7 +342,15 @@ class Poller:
 
                     try:
                         url = mt.gen_dl_token(tid)
-                        ok = QbClient(cfg.qb_url, cfg.qb_username, cfg.qb_password).add_url(url)
+                        # Build save path if configured
+                        savepath = None
+                        if cfg.download_base:
+                            name_dir = (task_row.task_name or kw).strip()
+                            if name_dir:
+                                # Avoid accidental ".." traversal
+                                name_dir = name_dir.replace("..", "_")
+                                savepath = os.path.join(cfg.download_base, name_dir)
+                        ok = QbClient(cfg.qb_url, cfg.qb_username, cfg.qb_password).add_url(url, savepath=savepath)
                         task.status = "added"
                         session.add(task)
                         session.commit()
@@ -484,6 +510,7 @@ class ConfigOut(BaseModel):
     qb_url: Optional[str]
     qb_username: Optional[str]
     qb_password: Optional[str]  # write-only in UI; returned as masked
+    download_base: Optional[str]
     poll_interval_sec: int
     enabled: bool
     last_poll_at: Optional[datetime]
@@ -495,6 +522,7 @@ class ConfigIn(BaseModel):
     qb_url: Optional[str] = None
     qb_username: Optional[str] = None
     qb_password: Optional[str] = None  # empty string means keep existing
+    download_base: Optional[str] = None
     poll_interval_sec: Optional[int] = None
     enabled: Optional[bool] = None
 
@@ -520,6 +548,7 @@ def get_config(session: Session = Depends(get_session)):
         qb_url=cfg.qb_url,
         qb_username=cfg.qb_username,
         qb_password=mask(cfg.qb_password),
+    download_base=cfg.download_base,
         poll_interval_sec=cfg.poll_interval_sec,
         enabled=cfg.enabled,
         last_poll_at=cfg.last_poll_at,
@@ -552,6 +581,9 @@ def update_config(body: ConfigIn, session: Session = Depends(get_session)):
         changed = True
     if body.enabled is not None:
         cfg.enabled = body.enabled
+        changed = True
+    if body.download_base is not None:
+        cfg.download_base = body.download_base
         changed = True
     if changed:
         session.add(cfg)
@@ -789,28 +821,34 @@ def preview(body: PreviewIn, session: Session = Depends(get_session)):
 class SavedSearchIn(BaseModel):
     keyword: str
     enabled: Optional[bool] = True
+    task_name: Optional[str] = None
 
 
 class SavedSearchOut(BaseModel):
     id: int
     keyword: str
     enabled: bool
+    task_name: Optional[str]
     created_at: datetime
 
 
 @app.get("/api/saved_searches", response_model=List[SavedSearchOut])
 def list_saved_searches(session: Session = Depends(get_session)):
     rows = session.exec(select(SavedSearch).order_by(desc(SavedSearch.created_at))).all()
-    return [SavedSearchOut(id=r.id, keyword=r.keyword, enabled=r.enabled, created_at=r.created_at) for r in rows]
+    return [SavedSearchOut(id=r.id, keyword=r.keyword, enabled=r.enabled, task_name=r.task_name, created_at=r.created_at) for r in rows]
 
 
 @app.post("/api/saved_searches", response_model=SavedSearchOut)
 def create_saved_search(body: SavedSearchIn, session: Session = Depends(get_session)):
-    row = SavedSearch(keyword=body.keyword.strip(), enabled=True if body.enabled is None else body.enabled)
+    row = SavedSearch(
+        keyword=body.keyword.strip(),
+        enabled=True if body.enabled is None else body.enabled,
+        task_name=(body.task_name.strip() if body.task_name else None),
+    )
     session.add(row)
     session.commit()
     session.refresh(row)
-    return SavedSearchOut(id=row.id, keyword=row.keyword, enabled=row.enabled, created_at=row.created_at)
+    return SavedSearchOut(id=row.id, keyword=row.keyword, enabled=row.enabled, task_name=row.task_name, created_at=row.created_at)
 
 
 @app.put("/api/saved_searches/{sid}", response_model=SavedSearchOut)
@@ -822,10 +860,12 @@ def update_saved_search(sid: int, body: SavedSearchIn, session: Session = Depend
         row.keyword = body.keyword.strip()
     if body.enabled is not None:
         row.enabled = body.enabled
+    if body.task_name is not None:
+        row.task_name = body.task_name.strip() or None
     session.add(row)
     session.commit()
     session.refresh(row)
-    return SavedSearchOut(id=row.id, keyword=row.keyword, enabled=row.enabled, created_at=row.created_at)
+    return SavedSearchOut(id=row.id, keyword=row.keyword, enabled=row.enabled, task_name=row.task_name, created_at=row.created_at)
 
 
 @app.delete("/api/saved_searches/{sid}")
@@ -853,7 +893,7 @@ async def run_saved_search(sid: int, session: Session = Depends(get_session)):
     if not row:
         raise HTTPException(404, "not found")
 
-    def do_once_for(keyword: str):
+    def do_once_for(keyword: str, task_name: Optional[str]):
         counts = {"attempted": 0, "added": 0, "failed": 0, "skipped_added": 0}
         errors: List[str] = []
         cfg = session.get(Config, 1)
@@ -879,7 +919,13 @@ async def run_saved_search(sid: int, session: Session = Depends(get_session)):
             counts["attempted"] += 1
             try:
                 url = mt.gen_dl_token(tid)
-                ok = qb.add_url(url)
+                savepath = None
+                if cfg.download_base:
+                    name_dir = (task_name or keyword).strip()
+                    if name_dir:
+                        name_dir = name_dir.replace("..", "_")
+                        savepath = os.path.join(cfg.download_base, name_dir)
+                ok = qb.add_url(url, savepath=savepath)
                 task.status = "added"
                 session.add(task)
                 session.commit()
@@ -896,7 +942,7 @@ async def run_saved_search(sid: int, session: Session = Depends(get_session)):
                 errors.append(f"{tid}: {e}")
         return counts, errors
 
-    counts, errors = do_once_for(row.keyword)
+    counts, errors = do_once_for(row.keyword, row.task_name)
     msg = f"已执行：新增 {counts['added']}，失败 {counts['failed']}，已存在 {counts['skipped_added']}"
     return RunOut(
         message=msg,
