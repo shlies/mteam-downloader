@@ -28,6 +28,7 @@
           <thead>
             <tr>
               <th>创建时间</th>
+              <th>任务名称</th>
               <th>关键词</th>
               <th>启用</th>
               <th>操作</th>
@@ -36,6 +37,7 @@
           <tbody>
             <tr v-for="s in saved" :key="s.id">
               <td>{{ fmtTime(s.created_at) }}</td>
+              <td>{{ s.task_name || '-' }}</td>
               <td>{{ s.keyword }}</td>
               <td><input type="checkbox" v-model="s.enabled" @change="toggleSaved(s)" /></td>
               <td>
@@ -52,6 +54,7 @@
       <section class="section">
         <h2>创建搜索任务（可预览）</h2>
         <div class="row">
+          <input type="text" v-model.trim="new_task_name" placeholder="任务名称（可选）" />
           <input type="text" v-model.trim="new_keyword" placeholder="关键词" />
           <button @click="preview">预览</button>
           <button @click="createSaved">创建任务</button>
@@ -112,6 +115,10 @@
           <div class="row">
             <label>密码</label>
             <input type="password" v-model="qb_password" placeholder="密码（留空则不修改）" />
+          </div>
+          <div class="row">
+            <label>下载位置</label>
+            <input type="text" v-model="download_base" placeholder="绝对路径，位于 qB 主机上，如 /downloads" />
           </div>
           <div class="row">
             <label>轮询间隔（秒）</label>
