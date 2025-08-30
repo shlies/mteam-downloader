@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>初始化密码 - M-Team 自动下载</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .card{max-width:420px;margin:10vh auto;padding:24px;background:#0f172a;border:1px solid #1f2a44;border-radius:8px}
+    input{width:100%}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>初始化管理密码</h2>
+    <div class="row"><input type="password" id="password" placeholder="新密码（≥6 位）" /></div>
+    <div class="row"><input type="password" id="confirm" placeholder="确认新密码" /></div>
+    <div class="row"><button id="btn_setup">创建密码</button></div>
+    <div id="msg" style="color:#f44336"></div>
+  </div>
+  <!-- Toasts -->
+  <div class="toasts" id="toasts" style="position:fixed;top:12px;right:12px;z-index:9999"></div>
+  <script>
+    async function post(url, body){
+      const r = await fetch(url,{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+      if(!r.ok){ throw new Error(await r.text()) }
+      return r.json()
+    }
+    function toast(message, type='ok'){
+      const box = document.getElementById('toasts')
+      const el = document.createElement('div')
+      el.className = `toast ${type}`
+      el.textContent = message
+      el.style.background = type==='error' ? '#b91c1c' : (type==='warn' ? '#b45309' : '#065f46')
+      el.style.color = '#fff'
+      el.style.padding = '8px 12px'
+      el.style.marginTop = '8px'
+      el.style.borderRadius = '6px'
+      el.style.boxShadow = '0 4px 12px rgba(0,0,0,.3)'
+      box.appendChild(el)
+      setTimeout(()=> el.remove(), 2400)
+    }
+    async function doSetup(){
+      const pwd = document.getElementById('password').value
+      const cfm = document.getElementById('confirm').value
+      const msg = document.getElementById('msg')
+      msg.textContent = ''
+      try{
+        await post('/api/setup', {password: pwd, confirm: cfm})
+        toast('已设置密码，请登录','ok')
+        location.href = '/login'
+      }catch(e){
+        msg.textContent = e.message || '创建失败'
+      }
+    }
+    document.getElementById('btn_setup').addEventListener('click', doSetup)
+    // Enter 提交
+    document.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter'){
+        e.preventDefault()
+        doSetup()
+      }
+    })
+  </script>
+</body>
+</html>

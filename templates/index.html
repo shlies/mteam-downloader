@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>M-Team Auto Downloader</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app" class="container">
+    <h1>M-Team 自动下载</h1>
+    <nav class="tabs">
+      <button class="tablink" :class="{active: activeTab==='home'}" @click="activeTab='home'">主页</button>
+      <button class="tablink" :class="{active: activeTab==='create'}" @click="activeTab='create'">创建任务</button>
+      <button class="tablink" :class="{active: activeTab==='settings'}" @click="activeTab='settings'">设置</button>
+      <button class="tablink" :class="{active: activeTab==='downloads'}" @click="activeTab='downloads'">下载日志</button>
+    </nav>
+
+    <div id="tab-home" class="tabcontent" v-show="activeTab==='home'">
+      <section class="section">
+        <h2>状态</h2>
+        <div>{{ stateText }}</div>
+        <button @click="trigger">手动触发一次轮询</button>
+      </section>
+      <section class="section">
+        <h2>已保存任务</h2>
+        <table id="saved_table">
+          <thead>
+            <tr>
+              <th>创建时间</th>
+              <th>关键词</th>
+              <th>启用</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in saved" :key="s.id">
+              <td>{{ fmtTime(s.created_at) }}</td>
+              <td>{{ s.keyword }}</td>
+              <td><input type="checkbox" v-model="s.enabled" @change="toggleSaved(s)" /></td>
+              <td>
+                <button @click="runSaved(s)">立即执行</button>
+                <button @click="delSaved(s)" style="background:#8b0000">删除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <div id="tab-create" class="tabcontent" v-show="activeTab==='create'">
+      <section class="section">
+        <h2>创建搜索任务（可预览）</h2>
+        <div class="row">
+          <input type="text" v-model.trim="new_keyword" placeholder="关键词" />
+          <button @click="preview">预览</button>
+          <button @click="createSaved">创建任务</button>
+        </div>
+        <div id="preview_box" v-show="preview_items.length">
+          <h3>预览结果</h3>
+          <table id="preview_table">
+            <thead>
+              <tr>
+                <th>Torrent ID</th>
+                <th>名称</th>
+                <th>大小</th>
+                <th>做种</th>
+                <th>折扣</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="x in preview_items" :key="x.id">
+                <td>{{ x.id }}</td>
+                <td>{{ x.name }}</td>
+                <td>{{ x.size }}</td>
+                <td>{{ x.seeders }}</td>
+                <td>{{ x.discount }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div id="tab-settings" class="tabcontent" v-show="activeTab==='settings'">
+      <section class="section">
+        <h2>账户</h2>
+        <div class="row">
+          <input type="password" v-model="cp_current" placeholder="当前密码" />
+          <input type="password" v-model="cp_new" placeholder="新密码（≥6 位）" />
+          <input type="password" v-model="cp_confirm" placeholder="确认新密码" />
+          <button type="button" @click="changePassword">修改密码</button>
+          <button type="button" @click="logout" style="background:#8b0000">退出登录</button>
+        </div>
+        <div id="cp_msg" style="font-size:0.9em">{{ cp_msg }}</div>
+      </section>
+      <section class="section">
+        <h2>配置</h2>
+        <form id="config-form" @submit.prevent="saveConfig">
+          <div class="row">
+            <label>API Key</label>
+            <input type="text" v-model="api_key" placeholder="M-Team API Key" />
+          </div>
+          <div class="row">
+            <label>qBittorrent WebUI</label>
+            <input type="text" v-model="qb_url" placeholder="http://127.0.0.1:8080" />
+          </div>
+          <div class="row">
+            <label>用户名</label>
+            <input type="text" v-model="qb_username" placeholder="admin" />
+          </div>
+          <div class="row">
+            <label>密码</label>
+            <input type="password" v-model="qb_password" placeholder="密码（留空则不修改）" />
+          </div>
+          <div class="row">
+            <label>轮询间隔（秒）</label>
+            <input type="number" v-model.number="poll_interval_sec" min="5" step="5" />
+          </div>
+          <div class="row">
+            <label>启用</label>
+            <input type="checkbox" v-model="enabled" />
+          </div>
+          <button type="submit">保存</button>
+        </form>
+        <div class="row" style="margin-top:10px">
+          <button type="button" @click="qbCheck">检查 qB 连接</button>
+          <span style="margin-left:12px;font-size:0.9em">{{ qb_check_result }}</span>
+        </div>
+      </section>
+    </div>
+
+    <div id="tab-downloads" class="tabcontent" v-show="activeTab==='downloads'">
+      <section class="section">
+        <h2>下载任务</h2>
+        <table id="tasks">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>Torrent ID</th>
+              <th>名称</th>
+              <th>状态</th>
+              <th>错误</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="i in tasks" :key="i.id">
+              <td>{{ fmtTime(i.created_at) }}</td>
+              <td>{{ i.torrent_id }}</td>
+              <td>{{ i.name }}</td>
+              <td><span class="badge" :class="i.status">{{ i.status }}</span></td>
+              <td>{{ i.error }}</td>
+              <td><button @click="delTask(i)" style="background:#8b0000">删除记录</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <!-- Toast notifications -->
+    <div class="toasts">
+      <div class="toast" :class="t.type" v-for="t in toasts" :key="t.id">{{ t.message }}</div>
+    </div>
+  </div>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;line-height:1.5;margin:0;background:#0b1220;color:#e6edf3}
+.container{max-width:1000px;margin:0 auto;padding:24px}
+h1{margin:0 0 16px}
+.section{background:#0f172a;border:1px solid #1f2a44;border-radius:8px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.row label{flex:0 0 160px}
+.row input{flex:1;padding:8px;background:#0b1220;color:#e6edf3;border:1px solid #1f2a44;border-radius:6px}
+button{background:#2e7d32;color:white;border:none;border-radius:6px;padding:8px 12px;cursor:pointer}
+button:hover{background:#1b5e20}
+#tasks{width:100%;border-collapse:collapse}
+#tasks th,#tasks td{border-bottom:1px solid #1f2a44;padding:8px;text-align:left}
+.badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:12px}
+.badge.queued{background:#424242}
+.badge.added{background:#1e88e5}
+.badge.failed{background:#c62828}
+
+/* Tabs */
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tablink{background:#1f2a44;color:#e6edf3;border:1px solid #26334f;border-radius:6px;padding:8px 12px;cursor:pointer}
+.tablink.active{background:#1e88e5;border-color:#1565c0}
+.tabcontent{animation: fade .2s ease}
+@keyframes fade{from{opacity:.6}to{opacity:1}}
+
+/* Toasts */
+.toasts{position:fixed;top:16px;right:16px;display:flex;flex-direction:column;gap:8px;z-index:9999}
+.toast{padding:10px 14px;border-radius:6px;background:#1f2a44;border:1px solid #26334f;color:#e6edf3;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.toast.success{background:#1b5e20}
+.toast.error{background:#8b0000}
+.toast.warn{background:#b26a00}
